@@ -61,8 +61,12 @@ void resource_limits_manager::initialize_database() {
       // see default settings in the declaration
 
       // start the chain off in a way that it is "congested" aka slow-start
-      state.virtual_cpu_limit = config.cpu_limit_parameters.max;
-      state.virtual_net_limit = config.net_limit_parameters.max;
+      // state.virtual_cpu_limit = config.cpu_limit_parameters.max;
+      // state.virtual_net_limit = config.net_limit_parameters.max;
+
+      // Setting very high limits to simulate infinite resources
+      state.virtual_cpu_limit = UINT64_MAX; // Max possible value
+      state.virtual_net_limit = UINT64_MAX; // Max possible value
    });
 
    if (auto dm_logger = _get_deep_mind_logger()) {
@@ -96,10 +100,18 @@ void resource_limits_manager::read_from_snapshot( const snapshot_reader_ptr& sna
 void resource_limits_manager::initialize_account(const account_name& account) {
    const auto& limits = _db.create<resource_limits_object>([&]( resource_limits_object& bl ) {
       bl.owner = account;
+      
+      // Set high limits or simulate no limit
+      bl.net_weight = UINT64_MAX; // Simulate no limit for network bandwidth
+      bl.cpu_weight = UINT64_MAX; // Simulate no limit for CPU bandwidth
    });
 
    const auto& usage = _db.create<resource_usage_object>([&]( resource_usage_object& bu ) {
       bu.owner = account;
+
+      // Initialize usage to 0 - account starts with no usage
+      bu.net_usage.value_ex = 0;
+      bu.cpu_usage.value_ex = 0;
    });
    if (auto dm_logger = _get_deep_mind_logger()) {
       dm_logger->on_newaccount_resource_limits(limits, usage);
@@ -140,10 +152,10 @@ void resource_limits_manager::add_transaction_usage(const flat_set<account_name>
    for( const auto& a : accounts ) {
 
       const auto& usage = _db.get<resource_usage_object,by_owner>( a );
-      int64_t unused;
-      int64_t net_weight;
-      int64_t cpu_weight;
-      get_account_limits( a, unused, net_weight, cpu_weight );
+      // int64_t unused;
+      // int64_t net_weight;
+      // int64_t cpu_weight;
+      // get_account_limits( a, unused, net_weight, cpu_weight );
 
       _db.modify( usage, [&]( auto& bu ){
           bu.net_usage.add( net_usage, time_slot, config.account_net_usage_average_window );
@@ -154,43 +166,43 @@ void resource_limits_manager::add_transaction_usage(const flat_set<account_name>
          }
       });
 
-      if( cpu_weight >= 0 && state.total_cpu_weight > 0 ) {
-         uint128_t window_size = config.account_cpu_usage_average_window;
-         auto virtual_network_capacity_in_window = (uint128_t)state.virtual_cpu_limit * window_size;
-         auto cpu_used_in_window                 = ((uint128_t)usage.cpu_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
+      // if( cpu_weight >= 0 && state.total_cpu_weight > 0 ) {
+      //    uint128_t window_size = config.account_cpu_usage_average_window;
+      //    auto virtual_network_capacity_in_window = (uint128_t)state.virtual_cpu_limit * window_size;
+      //    auto cpu_used_in_window                 = ((uint128_t)usage.cpu_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
 
-         uint128_t user_weight     = (uint128_t)cpu_weight;
-         uint128_t all_user_weight = state.total_cpu_weight;
+      //    uint128_t user_weight     = (uint128_t)cpu_weight;
+      //    uint128_t all_user_weight = state.total_cpu_weight;
 
-         auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
+      //    auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
 
-         SYS_ASSERT( cpu_used_in_window <= max_user_use_in_window,
-                     tx_cpu_usage_exceeded,
-                     "authorizing account '${n}' has insufficient cpu resources for this transaction",
-                     ("n", name(a))
-                     ("cpu_used_in_window",cpu_used_in_window)
-                     ("max_user_use_in_window",max_user_use_in_window) );
-      }
+      //    SYS_ASSERT( cpu_used_in_window <= max_user_use_in_window,
+      //                tx_cpu_usage_exceeded,
+      //                "authorizing account '${n}' has insufficient cpu resources for this transaction",
+      //                ("n", name(a))
+      //                ("cpu_used_in_window",cpu_used_in_window)
+      //                ("max_user_use_in_window",max_user_use_in_window) );
+      // }
 
-      if( net_weight >= 0 && state.total_net_weight > 0) {
+      // if( net_weight >= 0 && state.total_net_weight > 0) {
 
-         uint128_t window_size = config.account_net_usage_average_window;
-         auto virtual_network_capacity_in_window = (uint128_t)state.virtual_net_limit * window_size;
-         auto net_used_in_window                 = ((uint128_t)usage.net_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
+      //    uint128_t window_size = config.account_net_usage_average_window;
+      //    auto virtual_network_capacity_in_window = (uint128_t)state.virtual_net_limit * window_size;
+      //    auto net_used_in_window                 = ((uint128_t)usage.net_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
 
-         uint128_t user_weight     = (uint128_t)net_weight;
-         uint128_t all_user_weight = state.total_net_weight;
+      //    uint128_t user_weight     = (uint128_t)net_weight;
+      //    uint128_t all_user_weight = state.total_net_weight;
 
-         auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
+      //    auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
 
-         SYS_ASSERT( net_used_in_window <= max_user_use_in_window,
-                     tx_net_usage_exceeded,
-                     "authorizing account '${n}' has insufficient net resources for this transaction",
-                     ("n", name(a))
-                     ("net_used_in_window",net_used_in_window)
-                     ("max_user_use_in_window",max_user_use_in_window) );
+      //    SYS_ASSERT( net_used_in_window <= max_user_use_in_window,
+      //                tx_net_usage_exceeded,
+      //                "authorizing account '${n}' has insufficient net resources for this transaction",
+      //                ("n", name(a))
+      //                ("net_used_in_window",net_used_in_window)
+      //                ("max_user_use_in_window",max_user_use_in_window) );
 
-      }
+      // }
    }
 
    // account for this transaction in the block and do not exceed those limits either
@@ -199,8 +211,8 @@ void resource_limits_manager::add_transaction_usage(const flat_set<account_name>
       rls.pending_net_usage += net_usage;
    });
 
-   SYS_ASSERT( state.pending_cpu_usage <= config.cpu_limit_parameters.max, block_resource_exhausted, "Block has insufficient cpu resources" );
-   SYS_ASSERT( state.pending_net_usage <= config.net_limit_parameters.max, block_resource_exhausted, "Block has insufficient net resources" );
+   // SYS_ASSERT( state.pending_cpu_usage <= config.cpu_limit_parameters.max, block_resource_exhausted, "Block has insufficient cpu resources" );
+   // SYS_ASSERT( state.pending_net_usage <= config.net_limit_parameters.max, block_resource_exhausted, "Block has insufficient net resources" );
 }
 
 void resource_limits_manager::add_pending_ram_usage( const account_name account, int64_t ram_delta ) {
